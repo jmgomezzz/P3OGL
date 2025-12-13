@@ -84,6 +84,9 @@ struct lightData {
 	glm::vec3 lpos;
 };
 
+lightData scenelight;
+
+
 // === Funciones auxiliares ===
 //!!Por implementar
 
@@ -452,6 +455,8 @@ void timerFunc(int value) {
 
 void keyboardFunc(unsigned char key, int x, int y){
 	float cameraSpeed = 0.1f;
+	float lightSpeed = 0.2f;
+	bool updateLight = false;
 	//Movimiento hacia delante
 	if (key == 'w' || key == 'W')
 	{
@@ -472,6 +477,39 @@ void keyboardFunc(unsigned char key, int x, int y){
 	{
 		cameraPos += glm::normalize(glm::cross(cameraFront, cameraUp)) * cameraSpeed;
 	}
+
+
+
+	//CONTROL DE LUZ
+	//Movimiento
+	if (key == 'i' || key == 'I') { scenelight.lpos.z -= lightSpeed; updateLight = true; }
+	if (key == 'k' || key == 'K') { scenelight.lpos.z += lightSpeed; updateLight = true; }
+	if (key == 'j' || key == 'J') { scenelight.lpos.x -= lightSpeed; updateLight = true; }
+	if (key == 'l' || key == 'L') { scenelight.lpos.x += lightSpeed; updateLight = true; }
+	if (key == 'u' || key == 'U') { scenelight.lpos.y += lightSpeed; updateLight = true; }
+	if (key == 'o' || key == 'O') { scenelight.lpos.y -= lightSpeed; updateLight = true; }
+
+	//Intensidad (B: brighter, V:Darker)
+	if (key == 'b' || key == 'B') {
+		scenelight.Id += glm::vec3(0.1f);
+		scenelight.Is += glm::vec3(0.1f);
+		updateLight = true;
+	}
+	if (key == 'v' || key == 'V') {
+		scenelight.Id -= glm::vec3(0.1f);
+		scenelight.Is -= glm::vec3(0.1f);
+		// Evitar valores negativos
+		if (scenelight.Id.x < 0.0f) scenelight.Id = glm::vec3(0.0f);
+		if (scenelight.Is.x < 0.0f) scenelight.Is = glm::vec3(0.0f);
+		updateLight = true;
+	}
+	if (updateLight) {
+		glBindBuffer(GL_UNIFORM_BUFFER, uboLight);
+		glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(lightData), &scenelight);
+		glBindBuffer(GL_UNIFORM_BUFFER, 0);
+		glutPostRedisplay();
+	}
+
 }
 void mouseFunc(int button, int state, int x, int y){
 	if (button == GLUT_RIGHT_BUTTON)
@@ -536,12 +574,10 @@ void mouseWheelFunc(int wheel, int direction, int x, int y) {
 	glutPostRedisplay();
 }
 void initUBOs() {
-	//Crear datos de la luz
-	lightData lightData;
-	lightData.Ia = glm::vec3(0.3f);
-	lightData.Id = glm::vec3(1.0f);
-	lightData.Is = glm::vec3(1.0f);
-	lightData.lpos = glm::vec3(0.0f);
+	scenelight.Ia = glm::vec3(0.3f);
+	scenelight.Id = glm::vec3(1.0f);
+	scenelight.Is = glm::vec3(1.0f);
+	scenelight.lpos = glm::vec3(0.0f, 5.0f, 0.0f);
 
 	//=== CREAR EL UBO ===
 
@@ -550,7 +586,7 @@ void initUBOs() {
 	glBindBuffer(GL_UNIFORM_BUFFER, uboLight);
 
 	//Asignar espacio y copiar los datos
-	glBufferData(GL_UNIFORM_BUFFER, sizeof(lightData), &lightData, GL_STATIC_DRAW);
+	glBufferData(GL_UNIFORM_BUFFER, sizeof(lightData), &scenelight, GL_STATIC_DRAW);
 
 	//Enlazar el buffer al binding point
 	glBindBufferBase(GL_UNIFORM_BUFFER, LIGHT_BINDING_INDEX, uboLight);
