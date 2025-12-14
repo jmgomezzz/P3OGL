@@ -15,12 +15,18 @@
     <ClInclude Include="scr\auxiliar.h">
       <Filter>src</Filter>
     </ClInclude>
+    <ClInclude Include="ModelLoader.h">
+      <Filter>src</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="scr\main.cpp">
       <Filter>src</Filter>
     </ClCompile>
     <ClCompile Include="scr\auxiliar.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="ModelLoader.cpp">
       <Filter>src</Filter>
     </ClCompile>
   </ItemGroup>

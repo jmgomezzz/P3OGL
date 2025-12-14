@@ -1,5 +1,7 @@
 #include "BOX.h"
 #include "auxiliar.h"
+#include "ModelLoader.h"
+#include <vector>
 
 #include <gl/glew.h>
 #define SOLVE_FGLUT_WARNING
@@ -51,10 +53,12 @@ int inTexCoord;
 //Texturas
 unsigned int colorTexId;
 unsigned int emiTexId;
+unsigned int floorTexId;
 
 //Texturas Uniform
 int uColorTex;
 int uEmiTex;
+int uTexScale; //Escala de las coordenadas de textura
 
 //VAO
 unsigned int vao;
@@ -85,6 +89,14 @@ struct lightData {
 };
 
 lightData scenelight;
+
+
+//Variables para nuevo modelo
+unsigned int modelVAO;
+unsigned int modelVBOs[3]; //0: pos, 1: texCoord, 2: normal
+std::vector<glm::vec3> m_vertices;
+std::vector<glm::vec2> m_uvs;
+std::vector<glm::vec3> m_normals;
 
 
 // === Funciones auxiliares ===
@@ -185,7 +197,7 @@ void initOGL(){
 	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 	glEnable(GL_CULL_FACE);
 
-	proj = glm::perspective(glm::radians(60.0f), 1.0f, 0.1f, 50.0f);
+	proj = glm::perspective(glm::radians(60.0f), 1.0f, 0.1f, 1000.0f);
 	view = glm::mat4(1.0f);
 	view[3].z = -6; //inversa de la posición de la cámara (se mueve el mundo)
 
@@ -211,6 +223,7 @@ void destroy(){
 
 	glDeleteTextures(1, &colorTexId);
 	glDeleteTextures(1, &emiTexId);
+	glDeleteTextures(1, &floorTexId);
 }
 void initShader(const char *vname, const char *fname){
 	vshader = loadShader(vname, GL_VERTEX_SHADER);
@@ -252,6 +265,7 @@ void initShader(const char *vname, const char *fname){
 	//Texturas
 	uColorTex = glGetUniformLocation(program, "colorTex");
 	uEmiTex = glGetUniformLocation(program, "emiTex");
+	uTexScale = glGetUniformLocation(program, "texScale");
 
 	//CREAR identificadores de atributos 
 	inPos = glGetAttribLocation(program, "inPos");
@@ -270,6 +284,39 @@ void initShader(const char *vname, const char *fname){
 
 }
 void initObj(){
+	//Cargar nuevo modelo
+	if (!loadOBJ("../modelos/modelo.obj", m_vertices, m_uvs, m_normals)) {
+		std::cerr << "Error cargando el modelo OBJ" << std::endl;
+	}
+
+	//Confugurar el VAO
+	glGenVertexArrays(1, &modelVAO);
+	glBindVertexArray(modelVAO);
+	glGenBuffers(3, modelVBOs);
+
+	//Posiciones
+	glBindBuffer(GL_ARRAY_BUFFER, modelVBOs[0]);
+	glBufferData(GL_ARRAY_BUFFER, m_vertices.size() * sizeof(glm::vec3), &m_vertices[0], GL_STATIC_DRAW);
+	glVertexAttribPointer(inPos, 3, GL_FLOAT, GL_FALSE, 0, 0);
+	glEnableVertexAttribArray(inPos);
+
+	//UVs
+	if (inTexCoord != -1 && !m_uvs.empty()) {
+		glBindBuffer(GL_ARRAY_BUFFER, modelVBOs[1]);
+		glBufferData(GL_ARRAY_BUFFER, m_uvs.size() * sizeof(glm::vec2), &m_uvs[0], GL_STATIC_DRAW);
+		glVertexAttribPointer(inTexCoord, 2, GL_FLOAT, GL_FALSE, 0, 0);
+		glEnableVertexAttribArray(inTexCoord);
+	}
+	//Normales
+	if (inNormal != -1 && !m_normals.empty()) {
+		glBindBuffer(GL_ARRAY_BUFFER, modelVBOs[2]);
+		glBufferData(GL_ARRAY_BUFFER, m_normals.size() * sizeof(glm::vec3), &m_normals[0], GL_STATIC_DRAW);
+		glVertexAttribPointer(inNormal, 3, GL_FLOAT, GL_FALSE, 0, 0);
+		glEnableVertexAttribArray(inNormal);
+	}
+	glBindVertexArray(0); // Desvincular
+
+
 	//VAO
 	glGenVertexArrays(1, &vao);
 	glBindVertexArray(vao);
@@ -328,6 +375,7 @@ void initObj(){
 	//Dirección de las texturas
 	colorTexId = loadTex("../img/color2.png");
 	emiTexId = loadTex("../img/emissive.png");
+	floorTexId = loadTex("../img/suelo.jpg");
 }
 
 GLuint loadShader(const char *fileName, GLenum type){ 
@@ -383,11 +431,10 @@ unsigned int loadTex(const char *fileName){
 
 	glGenerateMipmap(GL_TEXTURE_2D);
 
-		glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
-	GL_LINEAR_MIPMAP_LINEAR);
+	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
 	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
-	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT); //Cambiamos a GL_REPEAT para permitir repetición (tiling)
+	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT); //Cambiamos a GL_REPEAT para permitir repetición (tiling)
 
 	return texId;
 }
@@ -397,9 +444,34 @@ void renderFunc(){
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	glUseProgram(program);
-
+	//View matrix
 	view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
-	
+	//Nuevo modelo
+	glm::mat4 modelView = view * model;
+	glm::mat4 modelViewProj = proj * view * model;
+	glm::mat4 normal = glm::transpose(glm::inverse(modelView));
+
+	if (uModelViewMat != -1) glUniformMatrix4fv(uModelViewMat, 1, GL_FALSE, &(modelView[0][0]));
+	if (uModelViewProjMat != -1) glUniformMatrix4fv(uModelViewProjMat, 1, GL_FALSE, &(modelViewProj[0][0]));
+	if (uNormalMat != -1) glUniformMatrix4fv(uNormalMat, 1, GL_FALSE, &(normal[0][0]));
+
+	//Texturas del modelo
+	if (uColorTex != -1) {
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, colorTexId);
+		glUniform1i(uColorTex, 0);
+	}
+	if (uEmiTex != -1) { //Desactivar emisiva
+		glActiveTexture(GL_TEXTURE0 + 1);
+		glBindTexture(GL_TEXTURE_2D, 0);
+	}
+	if (uTexScale != -1) glUniform1f(uTexScale, 1.0f);
+
+	// USAR EL NUEVO VAO
+	glBindVertexArray(modelVAO);
+	glDrawArrays(GL_TRIANGLES, 0, m_vertices.size()); //Usamos DrawArrays para el OBJ
+
+	//CUBO
 	glm::mat4 modelView = view * model;
 	glm::mat4 modelViewProj = proj * view * model;
 	glm::mat4 normal = glm::transpose(glm::inverse(modelView));
@@ -427,7 +499,45 @@ void renderFunc(){
 		glUniform1i(uEmiTex, 1);
 	}
 
+	if (uTexScale != -1) glUniform1f(uTexScale, 1.0f); //(1x)
+
 	glBindVertexArray(vao);
+	glDrawElements(GL_TRIANGLES, cubeNTriangleIndex * 3, GL_UNSIGNED_INT, (void*)0);
+
+
+	//SUELO
+	glm::mat4 modelFloor = glm::mat4(1.0f);
+	modelFloor = glm::translate(modelFloor, glm::vec3(0.0f, -2.0f, 0.0f));
+	modelFloor = glm::scale(modelFloor, glm::vec3(500.0f, 0.1f, 500.0f));    // Aplanarlo (Y=0.1) y estirarlo (X,Z=10)
+
+	glm::mat4 floorModelView = view * modelFloor;
+	glm::mat4 floorModelViewProj = proj * view * modelFloor;
+	glm::mat4 floorNormal = glm::transpose(glm::inverse(floorModelView));
+
+	//Enviamos uniformes
+	if (uModelViewMat != -1)
+		glUniformMatrix4fv(uModelViewMat, 1, GL_FALSE, &(floorModelView[0][0]));
+	if (uModelViewProjMat != -1)
+		glUniformMatrix4fv(uModelViewProjMat, 1, GL_FALSE, &(floorModelViewProj[0][0]));
+	if (uNormalMat != -1)
+		glUniformMatrix4fv(uNormalMat, 1, GL_FALSE, &(floorNormal[0][0]));
+
+	if (uTexScale != -1) glUniform1f(uTexScale, 1000.0f); //(10x)
+	//Textura
+	if (uColorTex != -1)
+	{
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, floorTexId); // <--- USAR TEXTURA DEL SUELO
+		glUniform1i(uColorTex, 0);
+	}
+	if (uEmiTex != -1)
+	{
+		glActiveTexture(GL_TEXTURE0 + 1);
+		glBindTexture(GL_TEXTURE_2D, 0);
+	}
+
+
+	//Dibujamos usando el VAO del cubo
 	glDrawElements(GL_TRIANGLES, cubeNTriangleIndex * 3, GL_UNSIGNED_INT, (void*)0);
 
 
@@ -569,7 +679,7 @@ void mouseWheelFunc(int wheel, int direction, int x, int y) {
 		fov = 90.0f;
 
 	// Recalcular la matriz de proyección con el nuevo FOV
-	proj = glm::perspective(glm::radians(fov), 1.0f, 0.1f, 50.0f);
+	proj = glm::perspective(glm::radians(fov), 1.0f, 0.1f, 1000.0f);
 
 	glutPostRedisplay();
 }

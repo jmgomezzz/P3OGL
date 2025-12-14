@@ -11,10 +11,12 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="ModelLoader.h" />
     <ClInclude Include="scr\auxiliar.h" />
     <ClInclude Include="scr\BOX.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="ModelLoader.cpp" />
     <ClCompile Include="scr\auxiliar.cpp" />
     <ClCompile Include="scr\main.cpp" />
   </ItemGroup>
