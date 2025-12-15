@@ -90,6 +90,19 @@ struct lightData {
 
 lightData scenelight;
 
+//Struct para varios objetos
+
+struct Car {
+	float radius;
+	float speed;
+	float angle;
+	float driftAngle;
+	float yOffset;
+	float driftPhase;
+};
+
+std::vector<Car> cars; //Array de coches
+
 
 //Variables para nuevo modelo
 unsigned int modelVAO;
@@ -114,7 +127,7 @@ void mouseWheelFunc(int button, int direction, int x, int y);
 // === Funciones de inicialización y destrucción ===
 void initContext(int argc, char** argv);
 void initOGL();
-void initShader(const char *vname, const char *fname);
+void initShader(const char* vname, const char* fname);
 void initObj();
 void destroy();
 void initUBOs();
@@ -122,12 +135,12 @@ void initUBOs();
 
 // === Carga el shader indicado, devuele el ID del shader ===
 //!Por implementar
-GLuint loadShader(const char *fileName, GLenum type);
+GLuint loadShader(const char* fileName, GLenum type);
 
 //Crea una textura, la configura, la sube a OpenGL, 
 //y devuelve el identificador de la textura 
 //!!Por implementar
-unsigned int loadTex(const char *fileName);
+unsigned int loadTex(const char* fileName);
 
 
 
@@ -136,7 +149,10 @@ unsigned int loadTex(const char *fileName);
 
 int main(int argc, char** argv)
 {
-	std::locale::global(std::locale("spanish"));// acentos ;)
+
+
+	//Si lo pongo en español por alguna razón jode los números de donde deberian de estar los vertices y convierte los objetos que importo en literalmente una linea recta en el infinito :)
+	//std::locale::global(std::locale("spanish"));// acentos ;)
 
 	initContext(argc, argv);
 	initOGL();
@@ -153,10 +169,10 @@ int main(int argc, char** argv)
 
 	return 0;
 }
-	
-  
- // === Funciones auxiliares ===
-void initContext(int argc, char** argv){
+
+
+// === Funciones auxiliares ===
+void initContext(int argc, char** argv) {
 	glutInit(&argc, argv);
 	glutInitContextVersion(3, 3);
 	glutInitContextFlags(GLUT_FORWARD_COMPATIBLE);
@@ -189,13 +205,14 @@ void initContext(int argc, char** argv){
 	glutMouseWheelFunc(mouseWheelFunc);
 
 }
-void initOGL(){
+void initOGL() {
 	glEnable(GL_DEPTH_TEST);
 	glClearColor(0.2f, 0.2f, 0.2f, 0.0f);
+	glDisable(GL_CULL_FACE);
 
-	glFrontFace(GL_CCW);
+	//glFrontFace(GL_CCW);
 	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-	glEnable(GL_CULL_FACE);
+	//glEnable(GL_CULL_FACE);
 
 	proj = glm::perspective(glm::radians(60.0f), 1.0f, 0.1f, 1000.0f);
 	view = glm::mat4(1.0f);
@@ -204,7 +221,7 @@ void initOGL(){
 
 
 }
-void destroy(){
+void destroy() {
 	glDetachShader(program, vshader);
 	glDetachShader(program, fshader);
 	glDeleteShader(vshader);
@@ -225,7 +242,7 @@ void destroy(){
 	glDeleteTextures(1, &emiTexId);
 	glDeleteTextures(1, &floorTexId);
 }
-void initShader(const char *vname, const char *fname){
+void initShader(const char* vname, const char* fname) {
 	vshader = loadShader(vname, GL_VERTEX_SHADER);
 	fshader = loadShader(fname, GL_FRAGMENT_SHADER);
 
@@ -282,12 +299,53 @@ void initShader(const char *vname, const char *fname){
 		glUniformBlockBinding(program, lightBlockIndex, LIGHT_BINDING_INDEX);
 	}
 
+	//DEBUG PARA VERIFICAR QUE TODO ESTÁ BIEN
+	std::cout << "inPos: " << inPos
+		<< " inNormal: " << inNormal
+		<< " inTexCoord: " << inTexCoord
+		<< " inColor: " << inColor << std::endl;
+
+	std::cout << "uModelView: " << uModelViewMat
+		<< " uMVP: " << uModelViewProjMat
+		<< " uNormal: " << uNormalMat << std::endl;
+
+
 }
-void initObj(){
+void initObj() {
 	//Cargar nuevo modelo
-	if (!loadOBJ("../modelos/modelo.obj", m_vertices, m_uvs, m_normals)) {
+	if (!loadOBJ("../models/cacharro.obj", m_vertices, m_uvs, m_normals)) {
 		std::cerr << "Error cargando el modelo OBJ" << std::endl;
 	}
+	std::cout << "m_vertices: " << m_vertices.size()
+		<< " m_uvs: " << m_uvs.size()
+		<< " m_normals: " << m_normals.size() << std::endl;
+	//--
+	glm::vec3 mn(1e9f), mx(-1e9f);
+	int bad = 0;
+	for (auto& v : m_vertices) {
+		if (!std::isfinite(v.x) || !std::isfinite(v.y) || !std::isfinite(v.z)) bad++;
+		mn = glm::min(mn, v);
+		mx = glm::max(mx, v);
+	}
+	std::cout << "BBox min: " << mn.x << "," << mn.y << "," << mn.z
+		<< "  max: " << mx.x << "," << mx.y << "," << mx.z
+		<< "  badVerts: " << bad << "\n";
+
+
+
+	// 1. Si faltan normales, el objeto sería invisible por error de iluminación (NaN)
+	if (m_normals.empty()) {
+		std::cout << "AVISO: El modelo no tiene normales. Generando normales por defecto (Arriba)." << std::endl;
+		// Rellenamos con un vector hacia arriba (0,1,0) para que la luz le afecte
+		m_normals.resize(m_vertices.size(), glm::vec3(0.0f, 1.0f, 0.0f));
+	}
+
+	// 2. Si faltan UVs, la textura fallaría
+	if (m_uvs.empty()) {
+		std::cout << "AVISO: El modelo no tiene UVs. Generando UVs por defecto (0,0)." << std::endl;
+		m_uvs.resize(m_vertices.size(), glm::vec2(0.0f, 0.0f));
+	}
+
 
 	//Confugurar el VAO
 	glGenVertexArrays(1, &modelVAO);
@@ -373,12 +431,26 @@ void initObj(){
 	model = glm::mat4(1.0f);
 
 	//Dirección de las texturas
-	colorTexId = loadTex("../img/color2.png");
+	colorTexId = loadTex("../img/Orange_Texture.png");
 	emiTexId = loadTex("../img/emissive.png");
 	floorTexId = loadTex("../img/suelo.jpg");
+
+	//Inicializar coches
+	cars.clear();
+	// Coche 1
+	cars.push_back({ 5.0f, 0.03f, 0.0f, 45.0f, -1.9f, 0.0f });
+
+	// Coche 2
+	cars.push_back({ 10.0f, 0.02f, 2.0f, 30.0f, -1.9f, 1.0f });
+
+	// Coche 3
+	cars.push_back({ 15.0f, 0.015f, 4.0f, 20.0f, -1.9f, 2.0f });
+
+	// Coche 4
+	cars.push_back({ 25.0f, 0.04f, 1.0f, 60.0f, -1.9f, 3.0f });
 }
 
-GLuint loadShader(const char *fileName, GLenum type){ 
+GLuint loadShader(const char* fileName, GLenum type) {
 	unsigned int fileLen;
 	char* source = loadStringFromFile(fileName, fileLen);
 	//Creación y compilación del Shader
@@ -388,7 +460,7 @@ GLuint loadShader(const char *fileName, GLenum type){
 		(const GLchar**)&source, (const GLint*)&fileLen);
 	glCompileShader(shader);
 	delete source;
-	
+
 	//Comprobamos que se compiló bien
 	GLint compiled;
 	glGetShaderiv(shader, GL_COMPILE_STATUS, &compiled);
@@ -409,7 +481,7 @@ GLuint loadShader(const char *fileName, GLenum type){
 
 	return shader;
 }
-unsigned int loadTex(const char *fileName){
+unsigned int loadTex(const char* fileName) {
 
 	unsigned char* map;
 	unsigned int w, h;
@@ -439,21 +511,36 @@ unsigned int loadTex(const char *fileName){
 	return texId;
 }
 
-void renderFunc(){
+void renderFunc() {
 
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	glUseProgram(program);
 	//View matrix
 	view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
+
+	// === CORRECCIÓN DE LUZ: Transformar posición de luz a View Space ===
+	// Creamos una copia temporal para no modificar la posición global del mundo
+	lightData lightView = scenelight;
+	// Multiplicamos la posición del mundo por la matriz de vista
+	glm::vec4 lposV = view * glm::vec4(scenelight.lpos, 1.0f);
+	lightView.lpos = glm::vec3(lposV);
+
+	// Subimos la luz transformada a la GPU
+	glBindBuffer(GL_UNIFORM_BUFFER, uboLight);
+	glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(lightData), &lightView);
+	glBindBuffer(GL_UNIFORM_BUFFER, 0);
+	// ===================================================================
+
 	//Nuevo modelo
 	glm::mat4 modelView = view * model;
 	glm::mat4 modelViewProj = proj * view * model;
-	glm::mat4 normal = glm::transpose(glm::inverse(modelView));
+	glm::mat4 normalMat = glm::transpose(glm::inverse(modelView));
 
 	if (uModelViewMat != -1) glUniformMatrix4fv(uModelViewMat, 1, GL_FALSE, &(modelView[0][0]));
 	if (uModelViewProjMat != -1) glUniformMatrix4fv(uModelViewProjMat, 1, GL_FALSE, &(modelViewProj[0][0]));
-	if (uNormalMat != -1) glUniformMatrix4fv(uNormalMat, 1, GL_FALSE, &(normal[0][0]));
+	if (uNormalMat != -1)  glUniformMatrix4fv(uNormalMat, 1, GL_FALSE, &normalMat[0][0]);
+
 
 	//Texturas del modelo
 	if (uColorTex != -1) {
@@ -461,101 +548,98 @@ void renderFunc(){
 		glBindTexture(GL_TEXTURE_2D, colorTexId);
 		glUniform1i(uColorTex, 0);
 	}
-	if (uEmiTex != -1) { //Desactivar emisiva
+	if (uEmiTex != -1) {
 		glActiveTexture(GL_TEXTURE0 + 1);
 		glBindTexture(GL_TEXTURE_2D, 0);
 	}
 	if (uTexScale != -1) glUniform1f(uTexScale, 1.0f);
 
-	// USAR EL NUEVO VAO
+	// Usar el VAO del coche
 	glBindVertexArray(modelVAO);
-	glDrawArrays(GL_TRIANGLES, 0, m_vertices.size()); //Usamos DrawArrays para el OBJ
 
-	//CUBO
-	glm::mat4 modelView = view * model;
-	glm::mat4 modelViewProj = proj * view * model;
-	glm::mat4 normal = glm::transpose(glm::inverse(modelView));
-	if (uModelViewMat != -1)
-		glUniformMatrix4fv(uModelViewMat, 1, GL_FALSE,
-			&(modelView[0][0]));
-	if (uModelViewProjMat != -1)
-		glUniformMatrix4fv(uModelViewProjMat, 1, GL_FALSE,
-			&(modelViewProj[0][0]));
-	if (uNormalMat != -1)
-		glUniformMatrix4fv(uNormalMat, 1, GL_FALSE,
-			&(normal[0][0]));
+	// === BUCLE PARA DIBUJAR CADA COCHE ===
+	for (const auto& car : cars) {
+		glm::mat4 carModel = glm::mat4(1.0f);
 
-	//Texturas
-	if (uColorTex != -1)
-	{
-		glActiveTexture(GL_TEXTURE0);
-		glBindTexture(GL_TEXTURE_2D, colorTexId);
-		glUniform1i(uColorTex, 0);
+		//Drift
+		float driftNowDeg = car.driftAngle * sin(car.driftPhase);   // driftAngle = máximo en grados
+
+		//Posición
+		float x = cos(car.angle) * car.radius;
+		float z = sin(car.angle) * car.radius;
+
+		//Patinada
+		glm::vec3 tangent(-sin(car.angle), 0.0f, cos(car.angle));   // dirección de movimiento
+		float lateral = sin(glm::radians(driftNowDeg)) * 0.7f;      // ajusta 0.2 .. 1.5
+		x += tangent.x * lateral;
+		z += tangent.z * lateral;
+
+		//Translacion
+		carModel = glm::translate(carModel, glm::vec3(x, car.yOffset, z));
+
+		//Rotación
+		float rotation = -car.angle + glm::radians(180.0f) + glm::radians(driftNowDeg);
+		carModel = glm::rotate(carModel, rotation, glm::vec3(0.0f, 1.0f, 0.0f));;
+
+		// Calcular matrices derivadas
+		glm::mat4 carModelView = view * carModel;
+		glm::mat4 carModelViewProj = proj * carModelView;  // <-- ESTE ES EL MVP DEL COCHE
+		glm::mat4 carNormalMat = glm::transpose(glm::inverse(carModelView));
+
+		if (uModelViewMat != -1)
+			glUniformMatrix4fv(uModelViewMat, 1, GL_FALSE, &carModelView[0][0]);
+
+		if (uModelViewProjMat != -1)
+			glUniformMatrix4fv(uModelViewProjMat, 1, GL_FALSE, &carModelViewProj[0][0]);  // <-- AQUÍ LO MANDAS
+
+		if (uNormalMat != -1)
+			glUniformMatrix4fv(uNormalMat, 1, GL_FALSE, &carNormalMat[0][0]);
+
+		glDrawArrays(GL_TRIANGLES, 0, (GLsizei)m_vertices.size());
 	}
-	if (uEmiTex != -1)
-	{
-		glActiveTexture(GL_TEXTURE0 + 1);
-		glBindTexture(GL_TEXTURE_2D, emiTexId);
-		glUniform1i(uEmiTex, 1);
-	}
-
-	if (uTexScale != -1) glUniform1f(uTexScale, 1.0f); //(1x)
-
-	glBindVertexArray(vao);
-	glDrawElements(GL_TRIANGLES, cubeNTriangleIndex * 3, GL_UNSIGNED_INT, (void*)0);
-
 
 	//SUELO
 	glm::mat4 modelFloor = glm::mat4(1.0f);
 	modelFloor = glm::translate(modelFloor, glm::vec3(0.0f, -2.0f, 0.0f));
-	modelFloor = glm::scale(modelFloor, glm::vec3(500.0f, 0.1f, 500.0f));    // Aplanarlo (Y=0.1) y estirarlo (X,Z=10)
+	modelFloor = glm::scale(modelFloor, glm::vec3(500.0f, 0.1f, 500.0f));
 
 	glm::mat4 floorModelView = view * modelFloor;
 	glm::mat4 floorModelViewProj = proj * view * modelFloor;
-	glm::mat4 floorNormal = glm::transpose(glm::inverse(floorModelView));
+	glm::mat4 floorNormalMat = glm::transpose(glm::inverse(floorModelView));
 
-	//Enviamos uniformes
-	if (uModelViewMat != -1)
-		glUniformMatrix4fv(uModelViewMat, 1, GL_FALSE, &(floorModelView[0][0]));
-	if (uModelViewProjMat != -1)
-		glUniformMatrix4fv(uModelViewProjMat, 1, GL_FALSE, &(floorModelViewProj[0][0]));
-	if (uNormalMat != -1)
-		glUniformMatrix4fv(uNormalMat, 1, GL_FALSE, &(floorNormal[0][0]));
+	if (uModelViewMat != -1) glUniformMatrix4fv(uModelViewMat, 1, GL_FALSE, &(floorModelView[0][0]));
+	if (uModelViewProjMat != -1) glUniformMatrix4fv(uModelViewProjMat, 1, GL_FALSE, &(floorModelViewProj[0][0]));
+	if (uNormalMat != -1) glUniformMatrix4fv(uNormalMat, 1, GL_FALSE, &floorNormalMat[0][0]);
 
-	if (uTexScale != -1) glUniform1f(uTexScale, 1000.0f); //(10x)
-	//Textura
-	if (uColorTex != -1)
-	{
+	if (uTexScale != -1) glUniform1f(uTexScale, 1000.0f);
+
+	if (uColorTex != -1) {
 		glActiveTexture(GL_TEXTURE0);
-		glBindTexture(GL_TEXTURE_2D, floorTexId); // <--- USAR TEXTURA DEL SUELO
+		glBindTexture(GL_TEXTURE_2D, floorTexId);
 		glUniform1i(uColorTex, 0);
 	}
-	if (uEmiTex != -1)
-	{
-		glActiveTexture(GL_TEXTURE0 + 1);
-		glBindTexture(GL_TEXTURE_2D, 0);
-	}
 
-
-	//Dibujamos usando el VAO del cubo
+	// USAR EL VAO DEL CUBO
+	glBindVertexArray(vao);
 	glDrawElements(GL_TRIANGLES, cubeNTriangleIndex * 3, GL_UNSIGNED_INT, (void*)0);
 
-
 	glUseProgram(NULL);
-
 	glutSwapBuffers();
-
 }
+
 void resizeFunc(int width, int height) {
 	glViewport(0, 0, width, height);
 	glutPostRedisplay();
 }
 void timerFunc(int value) {
-	// Lógica de actualización (animación del cubo)
-	model = glm::mat4(1.0f);
-	static float angle = 0.0f;
-	angle = (angle > 3.141592f * 2.0f) ? 0 : angle + 0.01f;
-	model = glm::rotate(model, angle, glm::vec3(1.0f, 1.0f, 0.0f));
+	// Actualizar el ángulo de CADA coche en la lista
+	for (auto& car : cars) {
+		car.angle += car.speed;
+		if (car.angle > 6.28318f) car.angle -= 6.28318f;
+
+		car.driftPhase += 0.10f + car.speed * 2.0f;
+	}
+
 
 	glutPostRedisplay();
 
@@ -563,7 +647,7 @@ void timerFunc(int value) {
 	glutTimerFunc(1000 / 60, timerFunc, 0);
 }
 
-void keyboardFunc(unsigned char key, int x, int y){
+void keyboardFunc(unsigned char key, int x, int y) {
 	float cameraSpeed = 0.1f;
 	float lightSpeed = 0.2f;
 	bool updateLight = false;
@@ -621,7 +705,7 @@ void keyboardFunc(unsigned char key, int x, int y){
 	}
 
 }
-void mouseFunc(int button, int state, int x, int y){
+void mouseFunc(int button, int state, int x, int y) {
 	if (button == GLUT_RIGHT_BUTTON)
 	{
 		if (state == GLUT_DOWN) {
@@ -640,7 +724,7 @@ void mouseFunc(int button, int state, int x, int y){
 void motionFunc(int x, int y) {
 	if (rightMouseDown) {
 		float xoffset = x - lastMouseX;
-		float yoffset = lastMouseY - y; 
+		float yoffset = lastMouseY - y;
 		lastMouseX = x;
 		lastMouseY = y;
 

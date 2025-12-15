@@ -17,6 +17,7 @@
   <ItemGroup>
     <ClCompile Include="scr\auxiliar.cpp" />
     <ClCompile Include="scr\main.cpp" />
+    <ClCompile Include="scr\ModelLoader.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\shaders_P3\shader.v0.frag" />
